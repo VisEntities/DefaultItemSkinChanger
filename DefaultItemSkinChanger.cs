@@ -4,13 +4,12 @@
  * Full legal terms can be found at https://game4freak.io/eula/
  */
 
-using Facepunch;
 using Newtonsoft.Json;
 using System.Collections.Generic;
 
 namespace Oxide.Plugins
 {
-    [Info("Default Item Skin Changer", "VisEntities", "1.0.0")]
+    [Info("Default Item Skin Changer", "VisEntities", "1.0.1")]
     [Description("Changes the default skin of items players receive at spawn.")]
     public class DefaultItemSkinChanger : RustPlugin
     {
@@ -28,8 +27,8 @@ namespace Oxide.Plugins
             [JsonProperty("Version")]
             public string Version { get; set; }
 
-            [JsonProperty("Custom Item Skins")]
-            public Dictionary<string, ulong> CustomItemSkins { get; set; }
+            [JsonProperty("Item Skins")]
+            public Dictionary<string, ulong> ItemSkins { get; set; }
         }
 
         protected override void LoadConfig()
@@ -62,6 +61,11 @@ namespace Oxide.Plugins
             if (string.Compare(_config.Version, "1.0.0") < 0)
                 _config = defaultConfig;
 
+            if (string.Compare(_config.Version, "1.0.1") < 0)
+            {
+                _config = defaultConfig;
+            }
+
             PrintWarning("Config update complete! Updated from version " + _config.Version + " to " + Version.ToString());
             _config.Version = Version.ToString();
         }
@@ -71,7 +75,7 @@ namespace Oxide.Plugins
             return new Configuration
             {
                 Version = Version.ToString(),
-                CustomItemSkins = new Dictionary<string, ulong>
+                ItemSkins = new Dictionary<string, ulong>
                 {
                     {
                         "rock", 0
@@ -99,38 +103,33 @@ namespace Oxide.Plugins
             _plugin = null;
         }
 
-        private void OnDefaultItemsReceived(PlayerInventory inventory)
+        private object OnDefaultItemsReceive(PlayerInventory inventory)
         {
             BasePlayer player = inventory.baseEntity;
             if (player == null || !PermissionUtil.HasPermission(player, PermissionUtil.USE))
-                return;
+                return null;
 
-            List<Item> allItems = Pool.Get<List<Item>>();
-            inventory.GetAllItems(allItems);
-            
-            foreach (Item item in allItems)
+            inventory.Strip();
+
+            foreach (var kvp in _config.ItemSkins)
             {
-                if (item == null || item.info == null)
-                    continue;
+                string itemShortName = kvp.Key;
+                ulong skinId = kvp.Value;
+                Item item;
 
-                if (_config.CustomItemSkins.TryGetValue(item.info.shortname, out ulong skinId))
+                if (skinId > 0)
+                    item = ItemManager.CreateByName(itemShortName, 1, skinId);
+                else
+                    item = ItemManager.CreateByName(itemShortName, 1);
+
+                if (item != null)
                 {
-                    if (skinId > 0)
-                    {
-                        item.skin = skinId;
-                        item.MarkDirty();
-
-                        BaseEntity heldEntity = item.GetHeldEntity();
-                        if (heldEntity != null)
-                        {
-                            heldEntity.skinID = skinId;
-                            heldEntity.SendNetworkUpdate();
-                        }
-                    }
+                    item.SetItemOwnership(player, ItemOwnershipPhrases.BornPhrase);
+                    inventory.GiveItem(item, inventory.containerBelt);
                 }
             }
 
-            Pool.FreeUnmanaged(ref allItems);
+            return true;
         }
 
         #endregion Oxide Hooks
